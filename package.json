@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "resolutions": {
+    "next": "13.4.19"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

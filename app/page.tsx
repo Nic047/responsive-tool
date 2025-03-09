@@ -1,327 +1,270 @@
 "use client";
 
+import { useEffect, useState, useRef } from "react";
+import { WebContainer } from "@webcontainer/api";
 import { Button } from "@/components/ui/button";
-import { File, Folder, FolderOpen, RefreshCcw, Save } from "lucide-react";
-import { useEffect, useState } from "react";
-import CodeMirror from "@uiw/react-codemirror";
-import { javascript } from "@codemirror/lang-javascript";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { python } from "@codemirror/lang-python";
-import { markdown } from "@codemirror/lang-markdown";
-import { json } from "@codemirror/lang-json";
-import { vscodeDark } from "@uiw/codemirror-theme-vscode";
+import { Loader } from "lucide-react";
 
-// Define types for the data we expect from the API
-interface RepoContent {
+interface ProjectContainerProps {
+  owner: string;
+  repo: string;
+}
+
+interface RepoItem {
   name: string;
   path: string;
   type: "file" | "dir";
-  url?: string;
-  content?: string; // For file content
-  children?: RepoContent[]; // For folder content
+  content?: string;
+  children?: RepoItem[];
 }
 
-export default function Home() {
-  const [repoContent, setRepoContent] = useState<RepoContent[] | null>(null);
+export default function ProjectContainer({
+  owner,
+  repo,
+}: ProjectContainerProps) {
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [currentCode, setCurrentCode] = useState<string>("");
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
-  const [currentFileName, setCurrentFileName] = useState<string | null>(null);
-  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const webContainerRef = useRef<any>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const handleFolderClick = (path: string) => {
-    setOpenFolders((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(path)) {
-        newSet.delete(path);
-      } else {
-        newSet.add(path);
-      }
-      return newSet;
-    });
+  const addLog = (message: string) => {
+    setLogs((prev) => [...prev, message]);
   };
 
-  const getLanguageExtension = (fileName: string) => {
-    const extension = fileName.split(".").pop()?.toLowerCase() || "";
+  // Function to convert repo structure to WebContainer files format
+  const convertRepoToFiles = (items: RepoItem[], parentPath = "") => {
+    const files: any = {};
 
-    // Map file extensions to CodeMirror language extensions
-    switch (extension) {
-      case "js":
-      case "jsx":
-      case "ts":
-      case "tsx":
-        return javascript();
-      case "html":
-        return html();
-      case "css":
-        return css();
-      case "py":
-        return python();
-      case "md":
-        return markdown();
-      case "json":
-        return json();
-      default:
-        return javascript(); // Default to JavaScript
+    for (const item of items) {
+      const path = parentPath ? `${parentPath}/${item.name}` : item.name;
+
+      if (item.type === "file") {
+        files[path] = {
+          file: {
+            contents: item.content || "",
+          },
+        };
+      } else if (item.type === "dir") {
+        if (item.children && item.children.length > 0) {
+          const childFiles = convertRepoToFiles(item.children, path);
+          Object.keys(childFiles).forEach((key) => {
+            files[key] = childFiles[key];
+          });
+        } else {
+          // Empty directory
+          files[path] = {
+            directory: {},
+          };
+        }
+      }
     }
+
+    return files;
   };
 
-  // Fetch the repository content on page load
   useEffect(() => {
-    const fetchRepoContent = async () => {
-      setLoading(true);
+    let isMounted = true;
 
-      const cachedData = localStorage.getItem("repoContent");
-
-      if (cachedData) {
-        console.log("Loading Repo Data from Cache");
-        setRepoContent(JSON.parse(cachedData));
-        setLoading(false);
-        return;
-      }
+    const setupWebContainer = async () => {
+      if (!isMounted) return;
 
       try {
-        const response = await fetch("/api/github/repo/Nic047/responsive-tool");
+        setLoading(true);
+        addLog("Fetching repository data...");
+
+        // Fetch repository data from your API
+        const response = await fetch(`/api/github/repo/${owner}/${repo}`);
         if (!response.ok) {
-          throw new Error("Failed to fetch repository content");
+          throw new Error("Failed to fetch repository data");
         }
-        const data = await response.json();
-        setRepoContent(data);
-        setError(null);
-        localStorage.setItem("repoContent", JSON.stringify(data));
-        console.log("Data cached in localStorage");
+
+        const repoData: RepoItem[] = await response.json();
+        addLog("Repository data fetched successfully");
+
+        // Boot WebContainer
+        addLog("Booting WebContainer...");
+        const webcontainerInstance = await WebContainer.boot();
+        webContainerRef.current = webcontainerInstance;
+        addLog("WebContainer booted successfully");
+
+        // Convert repository structure to WebContainer files format
+        const files = convertRepoToFiles(repoData);
+        addLog("Preparing files for mounting...");
+
+        // Add necessary package.json if not present
+        if (!files["package.json"]) {
+          addLog("Adding default package.json...");
+          files["package.json"] = {
+            file: {
+              contents: JSON.stringify(
+                {
+                  name: "nextjs-app",
+                  version: "0.1.0",
+                  private: true,
+                  scripts: {
+                    dev: "next dev",
+                    build: "next build",
+                    start: "next start",
+                  },
+                  dependencies: {
+                    next: "13.4.19",
+                    react: "18.2.0",
+                    "react-dom": "18.2.0",
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          };
+        }
+
+        // Mount files
+        addLog("Mounting files...");
+        await webcontainerInstance.mount(files);
+
+        // Verify files were mounted
+        addLog("Verifying file mount...");
+        const lsProcess = await webcontainerInstance.spawn("ls", ["-la"]);
+        lsProcess.output.pipeTo(
+          new WritableStream({
+            write(data) {
+              addLog(`Files in container: ${data}`);
+            },
+          })
+        );
+        await lsProcess.exit;
+
+        // Install dependencies
+        addLog("Installing dependencies (this may take a few minutes)...");
+        const installProcess = await webcontainerInstance.spawn("npm", [
+          "install",
+        ]);
+
+        installProcess.output.pipeTo(
+          new WritableStream({
+            write(data) {
+              addLog(`npm install: ${data}`);
+            },
+          })
+        );
+
+        const installExitCode = await installProcess.exit;
+        if (installExitCode !== 0) {
+          throw new Error("Failed to install dependencies");
+        }
+
+        addLog("Dependencies installed successfully");
+
+        // Start the development server
+        addLog("Starting Next.js development server...");
+        const devProcess = await webcontainerInstance.spawn("npx", [
+          "next",
+          "dev",
+          "--hostname",
+          "0.0.0.0",
+          "--port",
+          "3000",
+        ]);
+
+        devProcess.output.pipeTo(
+          new WritableStream({
+            write(data) {
+              addLog(`Next.js server: ${data}`);
+            },
+          })
+        );
+
+        // Handle server-ready event
+        webcontainerInstance.on("server-ready", (port, host) => {
+          addLog(`Server ready at: ${host}:${port}`);
+
+          // Construct the correct URL
+          const cleanHost = host.replace(/^https?:\/\//, "");
+          const url = `https://${cleanHost}:${port}`;
+          addLog(`App URL: ${url}`);
+
+          setServerUrl(url);
+          setLoading(false);
+        });
       } catch (err: any) {
+        console.error("WebContainer error:", err);
         setError(err.message);
-      } finally {
         setLoading(false);
       }
     };
 
-    fetchRepoContent();
-  }, []);
+    setupWebContainer();
 
-  const handleFileClick = (item: RepoContent) => {
-    // Check if there are unsaved changes
-    if (hasUnsavedChanges && currentFilePath) {
-      if (confirm("You have unsaved changes. Do you want to discard them?")) {
-        // User confirmed to discard changes
-        loadFile(item);
+    return () => {
+      isMounted = false;
+      // Cleanup WebContainer if needed
+      if (webContainerRef.current) {
+        // Any cleanup needed
       }
-    } else {
-      // No unsaved changes, load the file directly
-      loadFile(item);
-    }
-  };
-
-  const loadFile = (item: RepoContent) => {
-    setCurrentCode(item.content || "");
-    setCurrentFilePath(item.path);
-    setCurrentFileName(item.name);
-    setIsEditing(false);
-    setHasUnsavedChanges(false);
-  };
-
-  const handleEditClick = () => {
-    setIsEditing(true);
-  };
-
-  const handleCodeChange = (value: string) => {
-    setCurrentCode(value);
-    setHasUnsavedChanges(true);
-  };
-
-  const handleSaveClick = () => {
-    if (currentFilePath) {
-      // Update the file content in the repoContent state
-      if (repoContent) {
-        const updateFileContent = (
-          items: RepoContent[],
-          path: string,
-          content: string
-        ): boolean => {
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (item.path === path && item.type === "file") {
-              item.content = content;
-              return true;
-            }
-            if (item.children) {
-              if (updateFileContent(item.children, path, content)) {
-                return true;
-              }
-            }
-          }
-          return false;
-        };
-
-        const newRepoContent = [...repoContent];
-        updateFileContent(newRepoContent, currentFilePath, currentCode);
-        setRepoContent(newRepoContent);
-
-        // Update cache
-        localStorage.setItem("repoContent", JSON.stringify(newRepoContent));
-      }
-
-      setIsEditing(false);
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  if (error) {
-    return <div className="text-red-500">Error: {error}</div>;
-  }
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
-  if (!repoContent) {
-    return <div>No repository content available.</div>;
-  }
-
-  // Recursive function to render files and folders
-  const renderItem = (item: RepoContent) => {
-    if (item.type === "file") {
-      return (
-        <li key={item.path} className="flex items-center space-x-2">
-          <span className="text-gray-600">
-            <File size={16} />
-          </span>
-          <button
-            onClick={() => handleFileClick(item)}
-            className={`text-gray-700 hover:underline hover:cursor-pointer ${
-              currentFilePath === item.path ? "font-bold text-blue-600" : ""
-            }`}
-          >
-            {item.name}
-          </button>
-        </li>
-      );
-    }
-
-    // Folder item
-    const isOpen = openFolders.has(item.path);
-    return (
-      <li key={item.path} className="flex flex-col space-y-2">
-        <div className="flex items-center space-x-2">
-          <span className="text-gray-600">
-            {isOpen ? <FolderOpen size={16} /> : <Folder size={16} />}
-          </span>
-          <button
-            onClick={() => handleFolderClick(item.path)}
-            className="text-black hover:underline font-medium hover:cursor-pointer"
-          >
-            {item.name}
-          </button>
-        </div>
-
-        {isOpen && item.children && item.children.length > 0 && (
-          <ul className="pl-6 border-l border-gray-200">
-            {item.children.map((subItem) => renderItem(subItem))}
-          </ul>
-        )}
-      </li>
-    );
-  };
+    };
+  }, [owner, repo]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Repository Code Editor</h1>
-          <div className="flex space-x-2">
-            {currentFilePath && !isEditing && (
-              <Button
-                onClick={handleEditClick}
-                size="sm"
-                className="flex items-center gap-2"
-                variant="outline"
-              >
-                Edit
-              </Button>
-            )}
-            {isEditing && (
-              <Button
-                onClick={handleSaveClick}
-                size="sm"
-                className="flex items-center gap-2"
-                variant={hasUnsavedChanges ? "default" : "outline"}
-              >
-                <Save size={16} />
-                Save {hasUnsavedChanges && "*"}
-              </Button>
-            )}
-            <Button
-              onClick={() => {
-                if (hasUnsavedChanges) {
-                  if (confirm("You have unsaved changes. Proceed anyway?")) {
-                    localStorage.removeItem("repoContent");
-                    window.location.reload();
-                  }
-                } else {
-                  localStorage.removeItem("repoContent");
-                  window.location.reload();
-                }
-              }}
-              size="sm"
-              className="flex items-center gap-2"
-              variant="outline"
-            >
-              <RefreshCcw size={16} />
-              Refresh
-            </Button>
+    <div className="flex flex-col space-y-4 w-full">
+      <div className="bg-gray-100 p-4 rounded-lg">
+        <h2 className="text-lg font-semibold mb-2">
+          Project: {owner}/{repo}
+        </h2>
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            Error: {error}
           </div>
-        </div>
+        )}
 
-        <div className="flex gap-6 h-[70vh]">
-          <div className="w-1/4 overflow-y-auto border rounded-lg p-4 bg-gray-50">
-            <ul className="space-y-2">
-              {repoContent.map((item) => renderItem(item))}
-            </ul>
+        <div className="flex flex-col md:flex-row gap-4">
+          {/* Logs Panel */}
+          <div className="w-full md:w-1/3 h-96 overflow-y-auto bg-gray-900 text-gray-100 p-4 rounded font-mono text-sm">
+            {logs.map((log, i) => (
+              <div key={i} className="pb-1 border-b border-gray-800 mb-1">
+                {log}
+              </div>
+            ))}
           </div>
 
-          <div className="w-3/4 overflow-hidden border rounded-lg bg-gray-50 flex flex-col">
-            {currentFilePath && (
-              <div className="bg-gray-200 px-4 py-2 text-sm font-mono border-b flex justify-between items-center">
-                <span>{currentFilePath}</span>
-                {hasUnsavedChanges && <span className="text-red-500">*</span>}
+          {/* Preview Panel */}
+          <div className="w-full md:w-2/3 flex flex-col">
+            {loading ? (
+              <div className="flex items-center justify-center h-96 bg-gray-50 border rounded">
+                <div className="flex flex-col items-center">
+                  <Loader size={24} className="animate-spin mb-2" />
+                  <span>Loading your Next.js project...</span>
+                </div>
+              </div>
+            ) : serverUrl ? (
+              <div className="flex flex-col space-y-2">
+                <div className="flex justify-between items-center bg-gray-200 px-4 py-2 rounded-t">
+                  <span className="font-medium">App Preview</span>
+                  <a
+                    href={serverUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline text-sm"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
+                <iframe
+                  ref={iframeRef}
+                  src={serverUrl}
+                  className="w-full h-96 border rounded-b"
+                  title="Next.js App Preview"
+                />
+              </div>
+            ) : null}
+
+            {!loading && !serverUrl && !error && (
+              <div className="flex items-center justify-center h-96 bg-gray-50 border rounded">
+                <span>Waiting for server to start...</span>
               </div>
             )}
-
-            <div className="overflow-y-auto flex-grow">
-              {currentFilePath ? (
-                <div className="h-full">
-                  <CodeMirror
-                    value={currentCode}
-                    height="100%"
-                    theme={vscodeDark}
-                    extensions={
-                      currentFileName
-                        ? [getLanguageExtension(currentFileName)]
-                        : []
-                    }
-                    onChange={handleCodeChange}
-                    editable={isEditing}
-                    basicSetup={{
-                      lineNumbers: true,
-                      highlightActiveLine: true,
-                      highlightSelectionMatches: true,
-                      autocompletion: true,
-                      foldGutter: true,
-                      indentOnInput: true,
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="text-gray-500 flex items-center justify-center h-full">
-                  Click on a file to view its content
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
