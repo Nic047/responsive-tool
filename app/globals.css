@@ -166,3 +166,152 @@ iframe {
   height: 100%;
   width: 100%;
 }
+
+/* Add this to your globals.css or create a new stylesheet */
+
+.xterm-container {
+  height: 100%;
+  width: 100%;
+}
+
+.file-tree {
+  user-select: none;
+  font-size: 0.9rem;
+}
+
+/* Custom syntax highlighting for code editor */
+.code-editor {
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  padding: 0.5rem;
+  tab-size: 2;
+}
+
+/* Scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Editor and terminal sizing */
+.editor-container {
+  height: calc(100vh - 13rem);
+  position: relative;
+}
+
+.terminal-container {
+  height: 12rem;
+}
+
+/* Preview container */
+.preview-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.preview-iframe {
+  flex: 1;
+  border: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ide-container {
+    flex-direction: column;
+  }
+
+  .file-explorer {
+    width: 100%;
+    height: 200px;
+    overflow-y: auto;
+  }
+
+  .editor-container {
+    height: calc(100vh - 20rem);
+  }
+
+  .terminal-container {
+    height: 10rem;
+  }
+
+  .preview-container {
+    height: 300px;
+  }
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Code editor styling */
+.code-editor {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+/* Terminal styling - ensure proper contrast */
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* File tree styling */
+.file-tree-item {
+  transition: background-color 0.15s ease;
+  border-radius: 4px;
+  margin: 2px 0;
+}
+
+.file-tree-item:hover {
+  background-color: hsl(var(--muted));
+}
+
+.file-tree-item.selected {
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}

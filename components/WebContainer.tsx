@@ -8,6 +8,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "./ui/resizable";
+import { Loader2 } from "lucide-react";
 
 interface WebContainerProps {
   files: Record<string, any>; // Your GitHub repo files structure
@@ -20,6 +21,7 @@ export default function WebContainerPreview({ files }: WebContainerProps) {
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewActive, setPreviewActive] = useState(false);
 
   const addLog = (message: string) => {
     setLogs((prev) => [...prev, message]);
@@ -27,140 +29,100 @@ export default function WebContainerPreview({ files }: WebContainerProps) {
   };
 
   const convertToWebContainerFiles = () => {
-    const result: Record<string, any> = {};
-
-    // Add package.json
-    result["package.json"] = {
-      file: {
-        contents: JSON.stringify(
-          {
-            name: "nextjs-preview",
-            version: "0.1.0",
-            private: true,
-            scripts: {
-              dev: "next dev -p 4000",
-              build: "next build",
-              start: "next start -p 4000",
+    // Create a minimal Next.js project
+    return {
+      "package.json": {
+        file: {
+          contents: JSON.stringify(
+            {
+              name: "webcontainer-preview",
+              version: "0.1.0",
+              private: true,
+              scripts: {
+                dev: "next dev -p 4000",
+                build: "next build",
+                start: "next start -p 4000",
+              },
+              dependencies: {
+                next: "12.3.4",
+                react: "17.0.2",
+                "react-dom": "17.0.2",
+              },
             },
-            dependencies: {
-              next: "12.3.4",
-              react: "17.0.2",
-              "react-dom": "17.0.2",
-            },
-          },
-          null,
-          2
-        ),
+            null,
+            2
+          ),
+        },
       },
-    };
-
-    // Add next.config.js
-    result["next.config.js"] = {
-      file: {
-        contents: `
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  webpack: (config) => {
-    config.resolve.fallback = { fs: false };
-    return config;
-  },
-}
-module.exports = nextConfig
-        `.trim(),
+      "next.config.js": {
+        file: {
+          contents: `module.exports = { reactStrictMode: true }`,
+        },
       },
-    };
-
-    // Add pages/index.js
-    result["pages"] = {
-      directory: {
-        "index.js": {
-          file: {
-            contents: `
-// pages/index.js
+      pages: {
+        directory: {
+          "index.js": {
+            file: {
+              contents: `
 export default function Home() {
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>Hello from WebContainer</h1>
+    <div style={{ padding: '20px', fontFamily: 'system-ui, sans-serif' }}>
+      <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+        Repository Preview
+      </h1>
+      <p>Your repository is running in WebContainer</p>
     </div>
   )
-}`.trim(),
+}`,
+            },
           },
         },
       },
     };
-
-    return result;
   };
 
   const startDevServer = async (instance: WebContainer) => {
     try {
-      // Check directory contents
-      const lsProcess = await instance.spawn("ls", ["-la"]);
-      lsProcess.output.pipeTo(
-        new WritableStream({
-          write(chunk) {
-            addLog(`[ls] ${chunk}`);
-          },
-        })
-      );
-      await lsProcess.exit;
-
-      // Check pages directory
-      const lsPagesProcess = await instance.spawn("ls", ["-la", "pages"]);
-      lsPagesProcess.output.pipeTo(
-        new WritableStream({
-          write(chunk) {
-            addLog(`[ls pages] ${chunk}`);
-          },
-        })
-      );
-      await lsPagesProcess.exit;
-
-      // Install dependencies
-      addLog("Starting npm install...");
+      addLog("Installing dependencies...");
       const installProcess = await instance.spawn("npm", ["install"]);
+
       installProcess.output.pipeTo(
         new WritableStream({
           write(chunk) {
-            addLog(`[npm install] ${chunk}`);
+            addLog(`[npm] ${chunk}`);
           },
         })
       );
+
       const installExitCode = await installProcess.exit;
 
       if (installExitCode !== 0) {
-        throw new Error(`npm install failed with exit code ${installExitCode}`);
+        throw new Error(`Installation failed`);
       }
 
-      // Start dev server
-      addLog("Starting dev server...");
+      addLog("Starting development server...");
       const devProcess = await instance.spawn("npm", ["run", "dev"]);
+
       devProcess.output.pipeTo(
         new WritableStream({
           write(chunk) {
-            addLog(`[dev server] ${chunk}`);
+            addLog(`[server] ${chunk}`);
           },
         })
       );
 
-      // Listen for server-ready event
       instance.on("server-ready", (port, url) => {
-        addLog(`Server is ready on: ${url}`);
+        addLog(`Server is ready!`);
         setPreviewUrl(url);
+        setPreviewActive(true);
 
-        // Add a delay before setting the iframe src
-        setTimeout(() => {
-          const iframeEl =
-            document.querySelector<HTMLIFrameElement>("#preview-iframe");
-          if (iframeEl) {
-            addLog(`Setting iframe src to: ${url}`);
-            iframeEl.src = url;
-          }
-        }, 2000); // 2 second delay
+        const iframeEl =
+          document.querySelector<HTMLIFrameElement>("#preview-iframe");
+        if (iframeEl) {
+          iframeEl.src = url;
+        }
       });
     } catch (error) {
-      console.error("Error in startDevServer:", error);
       setError(error.message);
     }
   };
@@ -170,23 +132,18 @@ export default function Home() {
     setError(null);
     setLogs([]);
     setPreviewUrl(null);
+    setPreviewActive(false);
 
     try {
-      addLog("Starting WebContainer boot...");
+      addLog("Starting WebContainer...");
       const instance = await WebContainer.boot();
-      addLog("WebContainer booted successfully");
 
       const webContainerFiles = convertToWebContainerFiles();
-      addLog("Mounting files with structure:");
-      addLog(JSON.stringify(webContainerFiles, null, 2));
-
       await instance.mount(webContainerFiles);
-      addLog("Files mounted successfully");
 
       setWebcontainerInstance(instance);
       await startDevServer(instance);
     } catch (error) {
-      console.error("Failed to start preview:", error);
       setError(error.message);
     } finally {
       setIsLoading(false);
@@ -194,39 +151,72 @@ export default function Home() {
   };
 
   return (
-    <div className="h-full w-full">
-      <div className="flex flex-col gap-4 mb-4">
-        <div className="flex gap-4 items-center">
-          <Button onClick={handlePreview} disabled={isLoading}>
-            {isLoading ? "Loading Preview..." : "Live Preview"}
+    <div className="rounded-lg border bg-card shadow">
+      <div className="p-4 border-b">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Live Preview</h2>
+          <Button
+            onClick={handlePreview}
+            disabled={isLoading}
+            className="flex items-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading...</span>
+              </>
+            ) : (
+              <span>Start Preview</span>
+            )}
           </Button>
-          {previewUrl && (
-            <div className="text-sm text-gray-600">
-              Preview URL: {previewUrl}
-            </div>
-          )}
         </div>
-        {error && <div className="text-red-500">Error: {error}</div>}
+        {error && (
+          <div className="mt-2 p-2 bg-red-50 text-red-500 text-sm rounded border border-red-200">
+            {error}
+          </div>
+        )}
       </div>
 
-      <ResizablePanelGroup direction="horizontal" className="h-[80vh]">
-        <ResizablePanel defaultSize={30}>
-          <div className="h-full overflow-auto p-4 bg-gray-50 text-sm">
-            <h3 className="font-bold mb-2">Logs:</h3>
-            <pre className="whitespace-pre-wrap text-xs">{logs.join("\n")}</pre>
+      <ResizablePanelGroup direction="horizontal" className="h-[70vh]">
+        <ResizablePanel defaultSize={25} minSize={15}>
+          <div className="h-full overflow-auto p-3 text-xs bg-muted/50">
+            <h3 className="font-medium text-sm mb-2">Console Output</h3>
+            <div className="bg-black text-white p-2 rounded h-[calc(100%-2rem)] overflow-auto">
+              {logs.length === 0 ? (
+                <div className="text-gray-400 italic">
+                  Click "Start Preview" to begin
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap">{logs.join("\n")}</pre>
+              )}
+            </div>
           </div>
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={70}>
+        <ResizablePanel defaultSize={75}>
           <div className="h-full w-full bg-white">
-            <iframe
-              id="preview-iframe"
-              className="w-full h-full border-none"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
-              title="Preview"
-            />
+            {previewActive ? (
+              <iframe
+                id="preview-iframe"
+                className="w-full h-full border-none"
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                title="Preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full bg-muted/10">
+                <div className="text-center max-w-md p-6">
+                  <h3 className="text-lg font-medium mb-2">
+                    Repository Preview
+                  </h3>
+                  <p className="text-muted-foreground mb-4">
+                    Click "Start Preview" to launch a live preview of your
+                    repository in an isolated environment.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>

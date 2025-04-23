@@ -1,5 +1,7 @@
 "use client";
 
+import type React from "react";
+
 import { useEffect, useState, useRef } from "react";
 import { WebContainer } from "@webcontainer/api";
 import { Terminal } from "@xterm/xterm";
@@ -22,10 +24,7 @@ interface RepoItem {
   children?: RepoItem[];
 }
 
-export default function ProjectContainer({
-  owner,
-  repo,
-}: ProjectContainerProps) {
+export function ProjectContainer({ owner, repo }: ProjectContainerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -274,17 +273,18 @@ export default function ProjectContainer({
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="bg-gray-100 p-4 flex justify-between items-center">
-        <h2 className="text-lg font-semibold">
-          Project: {owner}/{repo}
+      <div className="bg-muted p-4 flex justify-between items-center border-b">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <span className="text-primary">Project:</span> {owner}/{repo}
         </h2>
 
-        <div className="flex space-x-2">
+        <div className="flex space-x-3">
           <Button
             variant="outline"
             size="sm"
             onClick={handleInstall}
             disabled={isInstalling}
+            className="font-medium"
           >
             {isInstalling ? (
               <Loader className="h-4 w-4 mr-2 animate-spin" />
@@ -299,6 +299,7 @@ export default function ProjectContainer({
             size="sm"
             onClick={handleStartDev}
             disabled={isRunning}
+            className="font-medium"
           >
             <Play className="h-4 w-4 mr-2" />
             Start Dev Server
@@ -307,15 +308,17 @@ export default function ProjectContainer({
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
+        <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 m-4 rounded-lg">
           Error: {error}
         </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* File Explorer */}
-        <div className="w-64 bg-gray-50 overflow-auto border-r">
-          <div className="p-2 bg-gray-100 border-b font-medium">Files</div>
+        <div className="w-64 bg-card overflow-auto border-r">
+          <div className="p-3 bg-muted border-b font-medium text-sm flex items-center">
+            <span className="text-primary mr-2">Files</span>
+          </div>
           <div className="p-2">
             {fileTree.length > 0 ? (
               <FileTree
@@ -324,7 +327,10 @@ export default function ProjectContainer({
                 selectedFile={selectedFile}
               />
             ) : (
-              <div className="text-gray-500">Loading files...</div>
+              <div className="text-muted-foreground flex items-center justify-center h-20">
+                <Loader className="h-4 w-4 mr-2 animate-spin" />
+                Loading files...
+              </div>
             )}
           </div>
         </div>
@@ -335,23 +341,30 @@ export default function ProjectContainer({
           <div className="flex-1 overflow-hidden">
             {selectedFile ? (
               <div className="h-full flex flex-col">
-                <div className="bg-gray-100 p-2 flex justify-between items-center border-b">
-                  <span className="font-medium">{selectedFile}</span>
-                  <Button size="sm" onClick={saveFile} variant="outline">
-                    <Save className="h-4 w-4 mr-2" />
+                <div className="bg-muted p-2 flex justify-between items-center border-b">
+                  <span className="font-medium text-sm truncate max-w-[70%]">
+                    {selectedFile}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={saveFile}
+                    variant="outline"
+                    className="h-8"
+                  >
+                    <Save className="h-3.5 w-3.5 mr-1.5" />
                     Save
                   </Button>
                 </div>
                 <textarea
                   ref={editorRef}
-                  className="flex-1 p-4 font-mono text-sm w-full h-full resize-none outline-none code-editor custom-scrollbar"
+                  className="flex-1 p-4 font-mono text-sm w-full h-full resize-none outline-none bg-background text-foreground code-editor custom-scrollbar"
                   value={fileContent}
                   onChange={handleEditorChange}
                   spellCheck={false}
                 ></textarea>
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-gray-500">
+              <div className="h-full flex items-center justify-center text-muted-foreground bg-card/50">
                 Select a file to edit
               </div>
             )}
@@ -359,16 +372,20 @@ export default function ProjectContainer({
 
           {/* Terminal */}
           <div className="h-64 border-t">
-            <div className="bg-gray-100 p-2 border-b font-medium">Terminal</div>
+            <div className="bg-muted p-2 border-b font-medium text-sm flex items-center">
+              <span className="text-primary mr-2">Terminal</span>
+            </div>
             <div ref={terminalRef} className="h-56 bg-black"></div>
           </div>
         </div>
 
         {/* Preview and Logs */}
-        <div className="w-96 bg-gray-50 overflow-hidden flex flex-col border-l">
+        <div className="w-96 bg-card overflow-hidden flex flex-col border-l">
           {/* Preview */}
           <div className="flex-1 overflow-hidden">
-            <div className="bg-gray-100 p-2 border-b font-medium">Preview</div>
+            <div className="bg-muted p-2 border-b font-medium text-sm flex items-center">
+              <span className="text-primary mr-2">Preview</span>
+            </div>
             {serverUrl ? (
               <iframe
                 ref={iframeRef}
@@ -377,14 +394,20 @@ export default function ProjectContainer({
                 title="App Preview"
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-gray-500">
+              <div className="h-full flex items-center justify-center text-muted-foreground bg-card/50">
                 {loading ? (
                   <div className="flex flex-col items-center">
-                    <Loader size={24} className="animate-spin mb-2" />
-                    <span>Loading...</span>
+                    <Loader
+                      size={24}
+                      className="animate-spin mb-2 text-primary"
+                    />
+                    <span>Loading environment...</span>
                   </div>
                 ) : (
-                  "Server not started"
+                  <div className="flex flex-col items-center">
+                    <Play size={24} className="mb-2 text-muted-foreground" />
+                    <span>Server not started</span>
+                  </div>
                 )}
               </div>
             )}
@@ -392,16 +415,24 @@ export default function ProjectContainer({
 
           {/* Logs */}
           <div className="h-56 border-t">
-            <div className="bg-gray-100 p-2 border-b font-medium">Logs</div>
-            <div className="h-48 overflow-auto p-2 text-sm custom-scrollbar">
-              {logs.map((log, i) => (
-                <div
-                  key={i}
-                  className="pb-1 mb-1 border-b border-gray-200 truncate"
-                >
-                  {log}
+            <div className="bg-muted p-2 border-b font-medium text-sm flex items-center">
+              <span className="text-primary mr-2">Logs</span>
+            </div>
+            <div className="h-48 overflow-auto p-2 text-sm custom-scrollbar bg-card/50">
+              {logs.length > 0 ? (
+                logs.map((log, i) => (
+                  <div
+                    key={i}
+                    className="pb-1 mb-1 border-b border-border text-foreground/80 truncate"
+                  >
+                    {log}
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground flex items-center justify-center h-full">
+                  No logs yet
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
